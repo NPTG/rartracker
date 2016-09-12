@@ -1,5 +1,5 @@
 <?php
-
+include 'smtp.class.php';
 class User {
 
 	private $id = 1;
@@ -208,9 +208,42 @@ class User {
 		return array("username" => $res["username"], "newPassword" => $newPassword);
 	}
 
+	public function registerByEmail($postdata){
+		$username=$postdata['username'];
+		$uname=$this->db->prepare("select id from user where username=?");
+		$uname->bindParam(1,	$username,	PDO::PARAM_STR);
+		$uname->execute();
+		$res=$uname->fetch(PDO::FETCH_ASSOC);
+		if ($res){
+			throw new Exception(L::get("USER_EXIST"), 400);
+		}
+		$password=hash($postdata['password']);
+		$secret=md5($password.time());
+		$insert=$this->db->prepare("insert into user('username','passhash','email','secret') VALUES (?,?,?,?)");
+		$insert->bindParam(1,	$postdata['username'],	PDO::PARAM_STR);
+		$insert->bindParam(1,	$password,	PDO::PARAM_STR);
+		$insert->bindParam(1,	$postdata['email'],	PDO::PARAM_STR);
+		$insert->bindParam(1,	$secret,	PDO::PARAM_STR);
+		$insert->execute();
+		include 'data.conf.php';
+		$smtpserver = $service; //SMTP服务器
+		$smtpserverport = $port; //SMTP服务器端口
+		$smtpusermail = $from; //SMTP服务器的用户邮箱
+		$smtpuser = $from; //SMTP服务器的用户帐号
+		$smtppass = $passwd; //SMTP服务器的用户密码
+		$smtp = new Smtp($smtpserver, $smtpserverport, true, $smtpuser, $smtppass);
+		$emailtype = "HTML";
+		$smtpemailto = $to;
+		$smtpemailfrom = $smtpusermail;
+		$emailsubject = "用户帐号激活";
+		$emailbody = "亲爱的" . $username . "：<br/>感谢您在我站注册了新帐号。<br/>请点击链接激活您的帐号。<br/><a href='http://127.0.0.1/register/active.php?verify=" . $token . "' target='_blank'>http://127.0.0.1/register/active.php?verify=" . $token . "</a><br/>如果以上链接无法点击，请将它复制到你的浏览器地址栏中进入访问，该链接24小时内有效。<br/>如果此次激活请求非你本人所发，请忽略本邮件。<br/><p style='text-align:right'>--------西大PT敬上</p>";
+		$rs = $smtp->sendmail($smtpemailto, $smtpemailfrom, $emailsubject, $emailbody, $emailtype);
+		if (!$rs){
+			throw new Exception(L::get("SEND_ERROR"), 399);
+		}
+	}
+
 	public function recoverByEmail($postdata) {
-
-
 		$ip = $_SERVER["REMOTE_ADDR"];
 
 		$recoverLog = new RecoveryLog($this->db);
@@ -234,29 +267,20 @@ class User {
 		$secret = md5(uniqid());
 		$this->db->query("UPDATE users SET secret = " . $this->db->quote($secret) . " WHERE id = " . $res["id"]);
 
-		require "Mail.php";
-
-		$smtp = Mail::factory("smtp",
-			array(
-				"host"     => Config::SITE_MAIL_SMTP,
-				"username" => Config::SITE_MAIL,
-				"password" => Config::SITE_MAIL_PASSWD ,
-				"auth"     => true,
-				"port"     => 25
-				)
-			);
-		$headers = array(
-			"From"		=> Config::SITE_MAIL,
-			"To"		=> $postdata["email"],
-			"Subject"	=> "password reset confirmation"
-		);
+		$headers = "Reply-To: ".Config::NAME." <".Config::SITE_MAIL.">\r\n";
+		$headers .= "Return-Path: ".Config::NAME." <".Config::SITE_MAIL.">\r\n";
+		$headers .= "From: ".Config::NAME." <".Config::SITE_MAIL.">\r\n";
+		$headers .= "Organization: ".Config::SITE_NAME."\r\n";
+		$headers .= "MIME-Version: 1.0\r\n";
+		$headers .= "Content-type: text/plain; charset=utf-8\r\n";
+		$headers .= "X-Mailer: PHP". phpversion() ."\r\n";
 
 		$siteName = Config::SITE_NAME;
 		$siteUrl = Config::SITE_URL;
 
 		$body = L::get("RECOVER_EMAIL", [$siteUrl, $secret, $siteName]);
 
-		$mail = $smtp->send($postdata["email"], $headers, $body);
+		mail($postdata["email"], Config::SITE_NAME . " password reset confirmation", $body, $headers, "-f" . Config::SITE_MAIL);
 
 		$hostname = gethostbyaddr($ip);
 
@@ -266,6 +290,22 @@ class User {
 			"ip" => $ip,
 			"hostname" => $hostname
 		));
+	}
+
+	public function gotComfirm($secret) {
+		if (strlen($secret) !== 32) {
+			throw new Exception(L::get("INVALID_RECOVERY_KEY"), 401);
+		}
+		$sth = $this->db->prepare("SELECT id, username, enabled, email, secret FROM users WHERE secret = ?");
+		$sth->bindParam(1,	$secret,	PDO::PARAM_STR);
+		$sth->execute();
+		$res = $sth->fetch(PDO::FETCH_ASSOC);
+
+		if (!$res) {
+			throw new Exception(L::get("RECOVERY_URL_ERROR"), 401);
+		}
+		$this->db->query("UPDATE users SET status = 1 WHERE id = " . $res["id"]);
+		return array("status"=>1);
 	}
 
 	public function gotRecoverByEmail($secret) {
@@ -327,18 +367,7 @@ class User {
 			$postdata["language"] = Config::DEFAULT_LANGUAGE;
 		}
 
-		switch ($postdata["format"]) {
-			case 0:
-				$indexlist = '2, 6'; // DVDR
-				break;
-			case 3:
-				$indexlist = '11, 163'; // 1080p
-				break;
-			default:
-				$indexlist = '1, 141'; // 720p
-		}
 
-		$age = (int) $postdata["age"];
 		$gender = (int) $postdata["gender"];
 
 		$sth = $this->db->query("SELECT id FROM news WHERE announce = 1 ORDER BY id DESC LIMIT 1");
@@ -831,7 +860,6 @@ class User {
 		$this->indexList = $arr["indexlist"];
 		$this->uplLastReadCommentId = $arr["uplLastReadCommentId"];
 		$this->last_bevakabrowse = $arr["last_bevakabrowse"];
-		$this->age = $arr["alder"];
 		$this->bonus = $arr["bonuspoang"];
 		$this->requestSlots = $arr["reqslots"];
 		$this->invites = $arr["invites"];
@@ -937,9 +965,7 @@ class User {
 		return $this->ip;
 	}
 
-	public function getAge() {
-		return $this->age;
-	}
+
 
 	public function getInvites() {
 		return $this->invites;
@@ -1210,10 +1236,9 @@ class User {
 		}
 
 		/* Check if a similiar list already exists in the database */
-		$sth = $this->db->prepare("SELECT id FROM customindex WHERE tid = ? AND typ = ? AND format = ? AND sektion = ? AND sort = ? AND genre = ?");
+		$sth = $this->db->prepare("SELECT id FROM customindex WHERE tid = ? AND typ = ? AND sektion = ? AND sort = ? AND genre = ?");
 		$sth->bindParam(1, $postdata["tid"],		PDO::PARAM_INT);
 		$sth->bindParam(2, $postdata["typ"],		PDO::PARAM_INT);
-		$sth->bindParam(3, $postdata["format"],		PDO::PARAM_INT);
 		$sth->bindParam(4, $postdata["sektion"],	PDO::PARAM_INT);
 		$sth->bindParam(5, $postdata["sort"],		PDO::PARAM_INT);
 		$sth->bindParam(6, $postdata["genre"],		PDO::PARAM_STR);
@@ -1224,10 +1249,9 @@ class User {
 		if ($res) {
 			$id = $res[0];
 		} else {
-			$sth = $this->db->prepare("INSERT INTO customindex(tid, typ, format, sektion, sort, genre) VALUES(?, ?, ?, ?, ?, ?)");
+			$sth = $this->db->prepare("INSERT INTO customindex(tid, typ, sektion, sort, genre) VALUES(?, ?, ?, ?, ?, ?)");
 			$sth->bindParam(1, $postdata["tid"],		PDO::PARAM_INT);
 			$sth->bindParam(2, $postdata["typ"],		PDO::PARAM_INT);
-			$sth->bindParam(3, $postdata["format"],		PDO::PARAM_INT);
 			$sth->bindParam(4, $postdata["sektion"],	PDO::PARAM_INT);
 			$sth->bindParam(5, $postdata["sort"],		PDO::PARAM_INT);
 			$sth->bindParam(6, $postdata["genre"],		PDO::PARAM_STR);
