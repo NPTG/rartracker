@@ -209,6 +209,8 @@ class User {
 	}
 
 	public function recoverByEmail($postdata) {
+
+
 		$ip = $_SERVER["REMOTE_ADDR"];
 
 		$recoverLog = new RecoveryLog($this->db);
@@ -232,20 +234,29 @@ class User {
 		$secret = md5(uniqid());
 		$this->db->query("UPDATE users SET secret = " . $this->db->quote($secret) . " WHERE id = " . $res["id"]);
 
-		$headers = "Reply-To: ".Config::NAME." <".Config::SITE_MAIL.">\r\n";
-		$headers .= "Return-Path: ".Config::NAME." <".Config::SITE_MAIL.">\r\n";
-		$headers .= "From: ".Config::NAME." <".Config::SITE_MAIL.">\r\n";
-		$headers .= "Organization: ".Config::SITE_NAME."\r\n";
-		$headers .= "MIME-Version: 1.0\r\n";
-		$headers .= "Content-type: text/plain; charset=utf-8\r\n";
-		$headers .= "X-Mailer: PHP". phpversion() ."\r\n";
+		require "Mail.php";
+
+		$smtp = Mail::factory("smtp",
+			array(
+				"host"     => Config::SITE_MAIL_SMTP,
+				"username" => Config::SITE_MAIL,
+				"password" => Config::SITE_MAIL_PASSWD ,
+				"auth"     => true,
+				"port"     => 25
+				)
+			);
+		$headers = array(
+			"From"		=> Config::SITE_MAIL,
+			"To"		=> $postdata["email"],
+			"Subject"	=> "password reset confirmation"
+		);
 
 		$siteName = Config::SITE_NAME;
 		$siteUrl = Config::SITE_URL;
 
 		$body = L::get("RECOVER_EMAIL", [$siteUrl, $secret, $siteName]);
 
-		mail($postdata["email"], Config::SITE_NAME . " password reset confirmation", $body, $headers, "-f" . Config::SITE_MAIL);
+		$mail = $smtp->send($postdata["email"], $headers, $body);
 
 		$hostname = gethostbyaddr($ip);
 

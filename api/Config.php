@@ -2,20 +2,22 @@
 
 class Config {
 
-	const NAME = "Rartracker";
-	const SITE_NAME = "rartracker.org";
-	const SITE_URL = "https://rartracker.org";
-	const SITE_MAIL = "no-reply@rartracker.org";
+	const NAME = "NWUPT";
+	const SITE_NAME = "pt.nwu.edu.cn";
+	const SITE_URL = "http://pt.nwu.edu.cn";
+	const SITE_MAIL = "nwupt@nwu.edu.cn";
+	const SITE_MAIL_PASSWD = "ztvy1927";
+	const SITE_MAIL_SMTP = "mail.nwu.edu.cn";
 
 	const SUGGESTION_FORUM_ID = 4;
 	const POLLS_FORUM_ID = 3;
 	const NEWS_FORUM_ID = 1;
 
 	const DEFAULT_LANGUAGE = "en";
-	public static $languages = ["en", "sv"];
+	public static $languages = ["en", "zh"];
 
-	const TRACKER_URL = "http://rartracker.org";
-    const TRACKER_URL_SSL = "https://rartracker.org";
+	const TRACKER_URL = "http://pt.nwu.edu.cn";
+    const TRACKER_URL_SSL = "http://pt.nwu.edu.cn";
 
 	public static $userClasses = array(
 		0 => "Extra",

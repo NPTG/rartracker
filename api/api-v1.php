@@ -61,6 +61,10 @@ try {
 			httpResponse($user->create($postdata));
 			break;
 
+		case validateRoute('GET', 'confirm'):
+			httpResponse($user->gotConfirm($_GET["secret"]));
+			break;
+
 		case validateRoute('POST', 'recover/by-passkey'):
 			httpResponse($user->recoverByPasskey($postdata));
 			break;
